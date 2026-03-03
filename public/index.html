@@ -157,11 +157,18 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
       }
 
+      .top-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 15px;
+        margin-bottom: 15px;
+      }
+
       .dashboard-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 30px;
+        margin-bottom: 20px;
         flex-wrap: wrap;
         gap: 15px;
       }
@@ -176,6 +183,21 @@
         gap: 10px;
         align-items: center;
         flex-wrap: wrap;
+      }
+
+      .text-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        font-size: 0.9rem;
+        cursor: pointer;
+        padding: 8px 16px;
+        border-radius: 8px;
+        transition: all 0.2s;
+      }
+
+      .text-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
       }
 
       .add-btn {
@@ -386,38 +408,6 @@
         color: #11998e !important;
       }
 
-      .logout-btn {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 10px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s;
-      }
-
-      .logout-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(245, 87, 108, 0.4);
-      }
-
-      .password-btn {
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 10px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s;
-      }
-
-      .password-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(79, 172, 254, 0.4);
-      }
-
       .hint {
         font-size: 0.875rem;
         color: #888;
@@ -429,16 +419,31 @@
           padding: 20px 10px;
         }
 
-        .header h1 {
-          font-size: 1.8rem;
+        .dashboard {
+          padding: 15px;
         }
 
-        .dashboard {
-          padding: 20px;
+        .dashboard-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+        }
+
+        .top-actions {
+          justify-content: flex-end;
         }
 
         .modal {
           padding: 30px 20px;
+        }
+
+        .subscription-url {
+          word-break: break-all;
+          white-space: normal;
+        }
+
+        .group-name {
+          word-break: break-word;
         }
       }
     </style>
@@ -465,11 +470,12 @@
 
       <!-- 管理界面 -->
       <div v-else>
-        <div class="header">
-          <h1>🚀 订阅管理</h1>
-          <p>管理和生成订阅链接</p>
+        <div class="top-actions">
+          <button class="text-btn" @click="openPasswordModal">
+            🔑 修改密码
+          </button>
+          <button class="text-btn" @click="handleLogout">退出登录</button>
         </div>
-
         <div class="dashboard">
           <div class="dashboard-header">
             <h2>📋 订阅分组列表</h2>
@@ -477,10 +483,6 @@
               <button class="add-btn" @click="showAddModal">
                 <span>➕</span> 添加分组
               </button>
-              <button class="password-btn" @click="openPasswordModal">
-                🔑 修改密码
-              </button>
-              <button class="logout-btn" @click="handleLogout">退出登录</button>
             </div>
           </div>
 
