@@ -220,6 +220,19 @@ router.delete("/api/groups/:id", requireAuth, async (ctx) => {
 
 // 订阅地址 - 获取分组内容（每行一个代理地址）
 router.get("/subscription/:id", async (ctx) => {
+  // 限流检查：每分钟只能有效访问一次（全局）- 放在最前面防止暴力扫描
+  const now = Date.now();
+
+  if (rateLimitRecord && now - rateLimitRecord.lastAccess < RATE_LIMIT_WINDOW) {
+    // 在限流时间内，返回空内容
+    ctx.set("Content-Type", "text/plain; charset=utf-8");
+    ctx.body = "";
+    return;
+  }
+
+  // 更新限流记录
+  rateLimitRecord = { lastAccess: now };
+
   const { id } = ctx.params;
   const data = loadData();
   const group = data.groups.find((g) => g.id === id);
@@ -240,19 +253,6 @@ router.get("/subscription/:id", async (ctx) => {
       return;
     }
   }
-
-  // 限流检查：每分钟只能有效访问一次（全局）
-  const now = Date.now();
-
-  if (rateLimitRecord && now - rateLimitRecord.lastAccess < RATE_LIMIT_WINDOW) {
-    // 在限流时间内，返回空内容
-    ctx.set("Content-Type", "text/plain; charset=utf-8");
-    ctx.body = "";
-    return;
-  }
-
-  // 更新限流记录
-  rateLimitRecord = { lastAccess: now };
 
   // 将数组转换为每行一个的文本格式
   ctx.set("Content-Type", "text/plain; charset=utf-8");
