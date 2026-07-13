@@ -5,6 +5,7 @@ const DATA_FILE = path.join(__dirname, "../db.json");
 
 const defaultData = {
   adminPassword: "admin123",
+  nodes: [],
   groups: [],
 };
 
@@ -15,7 +16,13 @@ function loadData() {
       return defaultData;
     }
     const data = fs.readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    return {
+      ...defaultData,
+      ...parsed,
+      nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
+      groups: Array.isArray(parsed.groups) ? parsed.groups : [],
+    };
   } catch (error) {
     console.error("加载数据失败:", error);
     return defaultData;

@@ -233,13 +233,85 @@
       .group-list {
         display: flex;
         flex-direction: column;
-        gap: 20px;
+        gap: 14px;
+        margin-bottom: 36px;
+      }
+
+      .node-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+        margin-bottom: 36px;
+      }
+
+      .node-card {
+        background: #f8f9fa;
+        border: 2px solid #e0e0e0;
+        border-radius: 14px;
+        padding: 18px;
+      }
+
+      .node-name {
+        color: #333;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .node-proxy {
+        color: #888;
+        font-family: "Monaco", "Consolas", monospace;
+        font-size: 0.75rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .node-hosts {
+        color: #667eea;
+        font-size: 0.8rem;
+        margin-top: 10px;
+      }
+
+      .node-card .group-actions {
+        margin-top: 14px;
+      }
+
+      .host-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .host-row input:first-child {
+        flex: 0.8;
+      }
+
+      .host-row input:last-of-type {
+        flex: 1.2;
+      }
+
+      .remove-host-btn {
+        border: none;
+        background: #fee2e2;
+        color: #dc2626;
+        border-radius: 8px;
+        width: 38px;
+        cursor: pointer;
+      }
+
+      .add-host-btn {
+        border: 1px dashed #667eea;
+        background: #f5f6ff;
+        color: #667eea;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
       }
 
       .group-card {
         background: #f8f9fa;
         border-radius: 16px;
-        padding: 24px;
+        padding: 16px 18px;
         border: 2px solid #e0e0e0;
         transition: all 0.3s;
       }
@@ -253,13 +325,13 @@
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        margin-bottom: 16px;
+        margin-bottom: 10px;
         flex-wrap: wrap;
         gap: 10px;
       }
 
       .group-name {
-        font-size: 1.25rem;
+        font-size: 1.1rem;
         font-weight: 600;
         color: #333;
       }
@@ -273,8 +345,8 @@
       .subscription-url-box {
         background: white;
         border-radius: 10px;
-        padding: 12px 16px;
-        margin-bottom: 16px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -454,6 +526,23 @@
         margin-top: 8px;
       }
 
+      .checkbox-label {
+        display: block;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #f8f9fa;
+        cursor: pointer;
+      }
+
+      .checkbox-label + .checkbox-label {
+        margin-top: 6px;
+      }
+
+      .checkbox-label input {
+        width: auto;
+        margin-right: 8px;
+      }
+
       @media (max-width: 768px) {
         body {
           padding: 20px 10px;
@@ -525,14 +614,18 @@
         </div>
         <div class="dashboard">
           <div class="dashboard-header">
-            <h2>📋 订阅分组列表</h2>
+            <h2>📋 节点与订阅分组</h2>
             <div class="header-actions">
+              <button class="add-btn" @click="showAddNodeModal">
+                <span>➕</span> 添加节点
+              </button>
               <button class="add-btn" @click="showAddModal">
                 <span>➕</span> 添加分组
               </button>
             </div>
           </div>
 
+          <h3>📋 订阅分组列表</h3>
           <div v-if="groups.length === 0" class="empty-state">
             <svg
               viewBox="0 0 24 24"
@@ -587,6 +680,29 @@
               </div>
             </div>
           </div>
+
+          <h3>🔗 节点列表</h3>
+          <div v-if="nodes.length === 0" class="empty-state">
+            <p>暂无节点，请先添加节点</p>
+          </div>
+          <div v-else class="node-list">
+            <div v-for="node in nodes" :key="node.id" class="node-card">
+              <div class="node-name">{{ node.name }}</div>
+              <div class="node-proxy" :title="node.proxy">{{ node.proxy }}</div>
+              <div v-if="node.preferredHosts.length" class="node-hosts">
+                优选：{{ node.preferredHosts.map(host => host.label + ' ' + host.value).join('、') }}
+              </div>
+              <div v-else class="hint">未配置优选 Host，将输出原始节点</div>
+              <div class="group-actions">
+                <button class="btn btn-secondary btn-sm" @click="showEditNodeModal(node)">
+                  ✏️ 编辑
+                </button>
+                <button class="btn btn-danger btn-sm" @click="deleteNode(node.id)">
+                  🗑️ 删除
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -609,19 +725,51 @@
               />
             </div>
             <div class="form-group">
-              <label for="proxies">代理分享地址</label>
-              <textarea
-                id="proxies"
-                v-model="formData.proxies"
-                placeholder="请输入代理分享地址，每行一个"
-                required
-              ></textarea>
-              <div class="hint">💡 支持多行输入，每行一个代理地址。</div>
+              <label>选择节点</label>
+              <div v-if="nodes.length === 0" class="hint">请先添加节点。</div>
+              <label v-for="node in nodes" :key="node.id" class="checkbox-label">
+                <input type="checkbox" :value="node.id" v-model="formData.nodeIds" />
+                {{ node.name }}
+              </label>
+              <div class="hint">💡 订阅会读取所选节点，并按节点配置生成优选 Host。</div>
             </div>
             <div class="modal-footer">
               <button type="submit" class="btn btn-primary">
                 {{ isEditing ? '保存修改' : '创建分组' }}
               </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 添加/编辑节点模态框 -->
+      <div v-if="showNodeModal" class="modal-overlay" @click.self="closeNodeModal">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>{{ isEditingNode ? '✏️ 编辑节点' : '➕ 添加节点' }}</h3>
+            <button class="close-btn" @click="closeNodeModal">×</button>
+          </div>
+          <form @submit.prevent="saveNode">
+            <div class="form-group">
+              <label for="nodeName">节点名称（可选）</label>
+              <input id="nodeName" type="text" v-model="nodeForm.name" placeholder="例如：日本节点" />
+            </div>
+            <div class="form-group">
+              <label for="nodeProxy">节点地址</label>
+              <textarea id="nodeProxy" v-model="nodeForm.proxy" placeholder="请输入 vless:// 节点地址" required></textarea>
+            </div>
+            <div class="form-group">
+              <label>优选 Host（可选）</label>
+              <div v-for="(host, index) in nodeForm.preferredHosts" :key="index" class="host-row">
+                <input type="text" v-model="host.label" placeholder="标签，如电信" />
+                <input type="text" v-model="host.value" placeholder="Host，如 0.0.0.0" />
+                <button type="button" class="remove-host-btn" @click="removeHost(index)">×</button>
+              </div>
+              <button type="button" class="add-host-btn" @click="addHost">＋ 添加优选 Host</button>
+              <div class="hint">每组优选 Host 会生成一条订阅，并在节点名称后追加【标签】。</div>
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-primary">{{ isEditingNode ? '保存修改' : '添加节点' }}</button>
             </div>
           </form>
         </div>
@@ -729,14 +877,23 @@
               newPassword: "",
               confirmPassword: "",
             },
+            nodes: [],
             groups: [],
             showModal: false,
+            showNodeModal: false,
             showPasswordModal: false,
             isEditing: false,
             editingGroupId: null,
+            isEditingNode: false,
+            editingNodeId: null,
             formData: {
               name: "",
-              proxies: "",
+              nodeIds: [],
+            },
+            nodeForm: {
+              name: "",
+              proxy: "",
+              preferredHosts: [],
             },
             toast: {
               message: "",
@@ -747,7 +904,7 @@
         async mounted() {
           await this.checkAuth();
           if (this.isLoggedIn) {
-            await this.loadGroups();
+            await Promise.all([this.loadNodes(), this.loadGroups()]);
           }
         },
         methods: {
@@ -776,7 +933,7 @@
               setToken(data.token);
               this.isLoggedIn = true;
               this.loginForm.password = "";
-              await this.loadGroups();
+              await Promise.all([this.loadNodes(), this.loadGroups()]);
               this.showToast("登录成功", "success");
             } catch (error) {
               this.showToast("密码错误", "error");
@@ -785,6 +942,7 @@
           handleLogout() {
             removeToken();
             this.isLoggedIn = false;
+            this.nodes = [];
             this.groups = [];
             this.showToast("已退出登录", "success");
           },
@@ -796,9 +954,22 @@
               this.showToast("加载分组失败", "error");
             }
           },
+          async loadNodes() {
+            try {
+              const { data } = await api.get("/api/nodes");
+              this.nodes = data.nodes.map((node) => ({
+                ...node,
+                preferredHosts: Array.isArray(node.preferredHosts)
+                  ? node.preferredHosts
+                  : [],
+              }));
+            } catch (error) {
+              this.showToast("加载节点失败", "error");
+            }
+          },
           showAddModal() {
             this.isEditing = false;
-            this.formData = { name: "", proxies: "" };
+            this.formData = { name: "", nodeIds: [] };
             this.showModal = true;
           },
           showEditModal(group) {
@@ -807,9 +978,7 @@
             // 将数组转换为多行文本
             this.formData = {
               name: group.name,
-              proxies: Array.isArray(group.proxies)
-                ? group.proxies.join("\n")
-                : group.proxies,
+              nodeIds: Array.isArray(group.nodeIds) ? [...group.nodeIds] : [],
             };
             this.showModal = true;
           },
@@ -817,7 +986,65 @@
             this.showModal = false;
             this.isEditing = false;
             this.editingGroupId = null;
-            this.formData = { name: "", proxies: "" };
+            this.formData = { name: "", nodeIds: [] };
+          },
+          showAddNodeModal() {
+            this.isEditingNode = false;
+            this.editingNodeId = null;
+            this.nodeForm = { name: "", proxy: "", preferredHosts: [] };
+            this.showNodeModal = true;
+          },
+          showEditNodeModal(node) {
+            this.isEditingNode = true;
+            this.editingNodeId = node.id;
+            this.nodeForm = {
+              name: node.name,
+              proxy: node.proxy,
+              preferredHosts: (node.preferredHosts || []).map((host) => ({ ...host })),
+            };
+            this.showNodeModal = true;
+          },
+          closeNodeModal() {
+            this.showNodeModal = false;
+            this.isEditingNode = false;
+            this.editingNodeId = null;
+            this.nodeForm = { name: "", proxy: "", preferredHosts: [] };
+          },
+          addHost() {
+            this.nodeForm.preferredHosts.push({ label: "", value: "" });
+          },
+          removeHost(index) {
+            this.nodeForm.preferredHosts.splice(index, 1);
+          },
+          async saveNode() {
+            const payload = {
+              name: this.nodeForm.name,
+              proxy: this.nodeForm.proxy,
+              preferredHosts: this.nodeForm.preferredHosts,
+            };
+            try {
+              if (this.isEditingNode) {
+                await api.put(`/api/nodes/${this.editingNodeId}`, payload);
+                this.showToast("节点已更新", "success");
+              } else {
+                await api.post("/api/nodes", payload);
+                this.showToast("节点已添加", "success");
+              }
+              this.closeNodeModal();
+              await this.loadNodes();
+            } catch (error) {
+              this.showToast(error.response?.data?.error || "保存节点失败", "error");
+            }
+          },
+          async deleteNode(id) {
+            if (!confirm("删除节点后，引用它的分组也会移除该节点，确定继续吗？")) return;
+            try {
+              await api.delete(`/api/nodes/${id}`);
+              this.showToast("节点已删除", "success");
+              await Promise.all([this.loadNodes(), this.loadGroups()]);
+            } catch (error) {
+              this.showToast("删除节点失败", "error");
+            }
           },
           openPasswordModal() {
             this.passwordForm = {
@@ -856,16 +1083,14 @@
             }
           },
           async saveGroup() {
-            // 将多行文本转换为数组，过滤空行
-            const proxiesArray = this.formData.proxies
-              .split("\n")
-              .map((p) => p.trim())
-              .filter((p) => p);
-
+            if (!this.formData.nodeIds.length) {
+              this.showToast("请至少选择一个节点", "error");
+              return;
+            }
             try {
               const payload = {
                 name: this.formData.name,
-                proxies: proxiesArray,
+                nodeIds: this.formData.nodeIds,
               };
 
               if (this.isEditing) {
