@@ -20,7 +20,7 @@ const SUBSCRIPTION_UA_SECRET = process.env.SUBSCRIPTION_UA_SECRET;
 
 // 全局限流记录：{ lastAccess: timestamp }
 let rateLimitRecord = null;
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 分钟
+const RATE_LIMIT_WINDOW = 10 * 1000; // 10 秒
 
 // MD5 加密
 function md5(str) {
@@ -348,7 +348,7 @@ router.delete("/api/groups/:id", requireAuth, async (ctx) => {
   ctx.body = { success: true };
 });
 
-// 订阅地址 - 获取分组内容（每行一个代理地址）
+// 订阅地址 - 获取分组内容（Base64 编码后的每行一个代理地址）
 router.get("/subscription/:id", async (ctx) => {
   // 限流检查：每分钟只能有效访问一次（全局）- 放在最前面防止暴力扫描
   const now = Date.now();
@@ -384,9 +384,10 @@ router.get("/subscription/:id", async (ctx) => {
     }
   }
 
-  // 将数组转换为每行一个的文本格式
+  // 将数组转换为每行一个的文本格式，再使用 UTF-8 做标准 Base64 编码。
+  const content = getGroupProxies(group, data).join("\n");
   ctx.set("Content-Type", "text/plain; charset=utf-8");
-  ctx.body = getGroupProxies(group, data).join("\n");
+  ctx.body = Buffer.from(content, "utf8").toString("base64");
 });
 
 app.use(router.routes());
