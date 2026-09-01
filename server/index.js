@@ -100,7 +100,9 @@ function getGroupProxies(group, data) {
     .map((id) => data.nodes.find((node) => node.id === id))
     .filter(Boolean);
   return nodes.flatMap((node) => {
-    const hosts = cleanPreferredHosts(node.preferredHosts);
+    if (!node.usePreferredHosts) return [node.proxy];
+    const hosts = cleanPreferredHosts(data.preferredHosts);
+    // Keep a usable subscription if Hosts have not been configured yet.
     if (!hosts.length) return [node.proxy];
     return hosts.map((host) =>
       replaceNodeName(
@@ -182,6 +184,19 @@ router.put("/api/password", requireAuth, async (ctx) => {
   ctx.body = { success: true };
 });
 
+// 获取和保存统一管理的优选 Host
+router.get("/api/preferred-hosts", requireAuth, async (ctx) => {
+  const data = loadData();
+  ctx.body = { preferredHosts: cleanPreferredHosts(data.preferredHosts) };
+});
+
+router.put("/api/preferred-hosts", requireAuth, async (ctx) => {
+  const data = loadData();
+  data.preferredHosts = cleanPreferredHosts(ctx.request.body.preferredHosts);
+  saveData(data);
+  ctx.body = { success: true, preferredHosts: data.preferredHosts };
+});
+
 // 获取所有节点
 router.get("/api/nodes", requireAuth, async (ctx) => {
   const data = loadData();
@@ -190,7 +205,7 @@ router.get("/api/nodes", requireAuth, async (ctx) => {
 
 // 创建节点
 router.post("/api/nodes", requireAuth, async (ctx) => {
-  const { name, proxy, preferredHosts } = ctx.request.body;
+  const { name, proxy, usePreferredHosts } = ctx.request.body;
   if (!proxy || typeof proxy !== "string" || !proxy.trim()) {
     ctx.status = 400;
     ctx.body = { error: "请输入节点地址" };
@@ -202,7 +217,7 @@ router.post("/api/nodes", requireAuth, async (ctx) => {
     id: uuidv4(),
     name: String(name || "").trim() || "未命名节点",
     proxy: proxy.trim(),
-    preferredHosts: cleanPreferredHosts(preferredHosts),
+    usePreferredHosts: usePreferredHosts === true,
     createdAt: new Date().toISOString(),
   };
   data.nodes.push(node);
@@ -212,7 +227,7 @@ router.post("/api/nodes", requireAuth, async (ctx) => {
 
 // 更新节点
 router.put("/api/nodes/:id", requireAuth, async (ctx) => {
-  const { name, proxy, preferredHosts } = ctx.request.body;
+  const { name, proxy, usePreferredHosts } = ctx.request.body;
   const data = loadData();
   const node = data.nodes.find((item) => item.id === ctx.params.id);
   if (!node) {
@@ -227,7 +242,7 @@ router.put("/api/nodes/:id", requireAuth, async (ctx) => {
   }
   node.name = String(name || "").trim() || "未命名节点";
   node.proxy = proxy.trim();
-  node.preferredHosts = cleanPreferredHosts(preferredHosts);
+  node.usePreferredHosts = usePreferredHosts === true;
   node.updatedAt = new Date().toISOString();
   saveData(data);
   ctx.body = { success: true, node };

@@ -620,6 +620,9 @@
               <button class="add-btn" @click="showAddNodeModal">
                 <span>➕</span> 添加节点
               </button>
+              <button class="add-btn" @click="openPreferredHostsModal">
+                <span>⚙️</span> 管理优选 Host
+              </button>
               <button class="add-btn" @click="showAddModal">
                 <span>➕</span> 添加分组
               </button>
@@ -690,10 +693,10 @@
             <div v-for="node in nodes" :key="node.id" class="node-card">
               <div class="node-name">{{ node.name }}</div>
               <div class="node-proxy" :title="node.proxy">{{ node.proxy }}</div>
-              <div v-if="node.preferredHosts.length" class="node-hosts">
-                优选：{{ node.preferredHosts.map(host => host.label + ' ' + host.value).join('、') }}
+              <div v-if="node.usePreferredHosts" class="node-hosts">
+                已启用优选 Host（使用统一管理的 {{ preferredHosts.length }} 个 Host）
               </div>
-              <div v-else class="hint">未配置优选 Host，将输出原始节点</div>
+              <div v-else class="hint">未启用优选 Host，将输出原始节点</div>
               <div class="group-actions">
                 <button class="btn btn-secondary btn-sm" @click="showEditNodeModal(node)">
                   ✏️ 编辑
@@ -732,7 +735,7 @@
                 <input type="checkbox" :value="node.id" v-model="formData.nodeIds" />
                 {{ node.name }}
               </label>
-              <div class="hint">💡 订阅会读取所选节点，并按节点配置生成优选 Host。</div>
+              <div class="hint">💡 已启用优选 Host 的节点会按统一 Host 列表生成订阅。</div>
             </div>
             <div class="modal-footer">
               <button type="submit" class="btn btn-primary">
@@ -760,17 +763,39 @@
               <textarea id="nodeProxy" v-model="nodeForm.proxy" placeholder="请输入 vless:// 节点地址" required></textarea>
             </div>
             <div class="form-group">
-              <label>优选 Host（可选）</label>
-              <div v-for="(host, index) in nodeForm.preferredHosts" :key="index" class="host-row">
-                <input type="text" v-model="host.label" placeholder="标签，如电信" />
-                <input type="text" v-model="host.value" placeholder="Host，如 0.0.0.0" />
-                <button type="button" class="remove-host-btn" @click="removeHost(index)">×</button>
-              </div>
-              <button type="button" class="add-host-btn" @click="addHost">＋ 添加优选 Host</button>
-              <div class="hint">每组优选 Host 会生成一条订阅，并在节点名称后追加【标签】。</div>
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="nodeForm.usePreferredHosts" />
+                启用优选 Host
+              </label>
+              <div class="hint">启用后会为每个统一管理的优选 Host 生成一条节点；未启用时原样输出节点。</div>
             </div>
             <div class="modal-footer">
               <button type="submit" class="btn btn-primary">{{ isEditingNode ? '保存修改' : '添加节点' }}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 优选 Host 管理模态框 -->
+      <div v-if="showPreferredHostsModal" class="modal-overlay" @click.self="closePreferredHostsModal">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>⚙️ 管理优选 Host</h3>
+            <button class="close-btn" @click="closePreferredHostsModal">×</button>
+          </div>
+          <form @submit.prevent="savePreferredHosts">
+            <div class="form-group">
+              <label>优选 Host 列表</label>
+              <div v-for="(host, index) in preferredHostsForm" :key="index" class="host-row">
+                <input type="text" v-model="host.label" placeholder="标签，如电信" />
+                <input type="text" v-model="host.value" placeholder="Host，如 0.0.0.0" />
+                <button type="button" class="remove-host-btn" @click="removePreferredHost(index)">×</button>
+              </div>
+              <button type="button" class="add-host-btn" @click="addPreferredHost">＋ 添加优选 Host</button>
+              <div class="hint">启用优选 Host 的节点会使用此处全部 Host，并在节点名称后追加【标签】。</div>
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-primary">保存优选 Host</button>
             </div>
           </form>
         </div>
@@ -880,8 +905,11 @@
             },
             nodes: [],
             groups: [],
+            preferredHosts: [],
+            preferredHostsForm: [],
             showModal: false,
             showNodeModal: false,
+            showPreferredHostsModal: false,
             showPasswordModal: false,
             isEditing: false,
             editingGroupId: null,
@@ -894,7 +922,7 @@
             nodeForm: {
               name: "",
               proxy: "",
-              preferredHosts: [],
+              usePreferredHosts: false,
             },
             toast: {
               message: "",
@@ -905,7 +933,11 @@
         async mounted() {
           await this.checkAuth();
           if (this.isLoggedIn) {
-            await Promise.all([this.loadNodes(), this.loadGroups()]);
+            await Promise.all([
+              this.loadNodes(),
+              this.loadGroups(),
+              this.loadPreferredHosts(),
+            ]);
           }
         },
         methods: {
@@ -934,7 +966,11 @@
               setToken(data.token);
               this.isLoggedIn = true;
               this.loginForm.password = "";
-              await Promise.all([this.loadNodes(), this.loadGroups()]);
+              await Promise.all([
+                this.loadNodes(),
+                this.loadGroups(),
+                this.loadPreferredHosts(),
+              ]);
               this.showToast("登录成功", "success");
             } catch (error) {
               this.showToast("密码错误", "error");
@@ -945,6 +981,8 @@
             this.isLoggedIn = false;
             this.nodes = [];
             this.groups = [];
+            this.preferredHosts = [];
+            this.preferredHostsForm = [];
             this.showToast("已退出登录", "success");
           },
           async loadGroups() {
@@ -958,14 +996,17 @@
           async loadNodes() {
             try {
               const { data } = await api.get("/api/nodes");
-              this.nodes = data.nodes.map((node) => ({
-                ...node,
-                preferredHosts: Array.isArray(node.preferredHosts)
-                  ? node.preferredHosts
-                  : [],
-              }));
+              this.nodes = data.nodes;
             } catch (error) {
               this.showToast("加载节点失败", "error");
+            }
+          },
+          async loadPreferredHosts() {
+            try {
+              const { data } = await api.get("/api/preferred-hosts");
+              this.preferredHosts = data.preferredHosts;
+            } catch (error) {
+              this.showToast("加载优选 Host 失败", "error");
             }
           },
           showAddModal() {
@@ -992,7 +1033,7 @@
           showAddNodeModal() {
             this.isEditingNode = false;
             this.editingNodeId = null;
-            this.nodeForm = { name: "", proxy: "", preferredHosts: [] };
+            this.nodeForm = { name: "", proxy: "", usePreferredHosts: false };
             this.showNodeModal = true;
           },
           showEditNodeModal(node) {
@@ -1001,7 +1042,7 @@
             this.nodeForm = {
               name: node.name,
               proxy: node.proxy,
-              preferredHosts: (node.preferredHosts || []).map((host) => ({ ...host })),
+              usePreferredHosts: node.usePreferredHosts === true,
             };
             this.showNodeModal = true;
           },
@@ -1009,19 +1050,38 @@
             this.showNodeModal = false;
             this.isEditingNode = false;
             this.editingNodeId = null;
-            this.nodeForm = { name: "", proxy: "", preferredHosts: [] };
+            this.nodeForm = { name: "", proxy: "", usePreferredHosts: false };
           },
-          addHost() {
-            this.nodeForm.preferredHosts.push({ label: "", value: "" });
+          openPreferredHostsModal() {
+            this.preferredHostsForm = this.preferredHosts.map((host) => ({ ...host }));
+            this.showPreferredHostsModal = true;
           },
-          removeHost(index) {
-            this.nodeForm.preferredHosts.splice(index, 1);
+          closePreferredHostsModal() {
+            this.showPreferredHostsModal = false;
+          },
+          addPreferredHost() {
+            this.preferredHostsForm.push({ label: "", value: "" });
+          },
+          removePreferredHost(index) {
+            this.preferredHostsForm.splice(index, 1);
+          },
+          async savePreferredHosts() {
+            try {
+              const { data } = await api.put("/api/preferred-hosts", {
+                preferredHosts: this.preferredHostsForm,
+              });
+              this.preferredHosts = data.preferredHosts;
+              this.closePreferredHostsModal();
+              this.showToast("优选 Host 已保存", "success");
+            } catch (error) {
+              this.showToast("保存优选 Host 失败", "error");
+            }
           },
           async saveNode() {
             const payload = {
               name: this.nodeForm.name,
               proxy: this.nodeForm.proxy,
-              preferredHosts: this.nodeForm.preferredHosts,
+              usePreferredHosts: this.nodeForm.usePreferredHosts,
             };
             try {
               if (this.isEditingNode) {
