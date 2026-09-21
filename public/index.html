@@ -6,8 +6,18 @@
     <title>订阅管理</title>
     <script src="https://fastly.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
     <script src="https://fastly.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <link rel="stylesheet" href="https://fastly.jsdelivr.net/npm/mdui@2/mdui.css" />
+    <script src="https://fastly.jsdelivr.net/npm/mdui@2/mdui.global.js"></script>
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
       rel="stylesheet"
     />
     <style>
@@ -577,9 +587,10 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="/mdui-theme.css" />
   </head>
   <body>
-    <div id="app">
+    <template id="legacy-app">
       <!-- Loading 状态 -->
       <div v-if="loading" class="loading-container">
         <div class="loading-spinner"></div>
@@ -854,6 +865,216 @@
       <div v-if="toast.message" class="toast" :class="toast.type">
         {{ toast.message }}
       </div>
+    </template>
+
+    <div id="app" class="app-shell">
+      <div v-if="loading" class="loading-page">
+        <div class="loading-card">
+          <mdui-circular-progress></mdui-circular-progress>
+          <span>正在加载订阅数据…</span>
+        </div>
+      </div>
+
+      <main v-else-if="!isLoggedIn" class="login-page">
+        <mdui-card variant="elevated" class="login-card">
+          <form @submit.prevent="handleLogin">
+            <div class="login-brand">
+              <div class="login-icon"><mdui-icon name="shield_lock"></mdui-icon></div>
+              <h1>订阅管理</h1>
+              <p>登录后管理节点与订阅分组</p>
+            </div>
+            <mdui-text-field
+              class="form-field"
+              variant="outlined"
+              type="password"
+              toggle-password
+              label="管理密码"
+              icon="lock"
+              autocomplete="current-password"
+              required
+              :value="loginForm.password"
+              @input="loginForm.password = $event.target.value"
+            ></mdui-text-field>
+            <mdui-button class="login-submit" type="submit" variant="filled" icon="login">登录</mdui-button>
+          </form>
+        </mdui-card>
+      </main>
+
+      <template v-else>
+        <header class="app-bar">
+          <div class="brand">
+            <div class="brand-mark"><mdui-icon name="dns"></mdui-icon></div>
+            <div>
+              <div class="brand-title">订阅管理</div>
+              <div class="brand-subtitle">节点与订阅分组控制台</div>
+            </div>
+          </div>
+          <div class="app-bar-actions">
+            <mdui-tooltip content="修改管理密码">
+              <mdui-button-icon icon="key" @click="openPasswordModal"></mdui-button-icon>
+            </mdui-tooltip>
+            <mdui-tooltip content="退出登录">
+              <mdui-button-icon icon="logout" @click="handleLogout"></mdui-button-icon>
+            </mdui-tooltip>
+          </div>
+        </header>
+
+        <main class="page-content">
+          <section class="hero">
+            <div>
+              <p class="eyebrow">Subscription Console</p>
+              <h1>节点与订阅分组</h1>
+              <p class="hero-description">集中维护代理节点、优选 Host 与订阅地址，让配置清晰、可控且易于分发。</p>
+            </div>
+            <div class="hero-actions">
+              <mdui-button variant="filled" icon="add_link" @click="showAddNodeModal">添加节点</mdui-button>
+              <mdui-button variant="tonal" icon="tune" @click="openPreferredHostsModal">优选 Host</mdui-button>
+              <mdui-button variant="outlined" icon="create_new_folder" @click="showAddModal">添加分组</mdui-button>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-heading">
+              <h2 class="section-title"><mdui-icon name="folder_copy"></mdui-icon>订阅分组 <span class="count-badge">{{ groups.length }}</span></h2>
+            </div>
+            <div v-if="groups.length === 0" class="empty-state">
+              <div>
+                <mdui-icon name="folder_off"></mdui-icon>
+                <h3>还没有订阅分组</h3>
+                <p>添加分组后，即可获得可复制的订阅地址。</p>
+              </div>
+            </div>
+            <div v-else class="card-grid group-card-grid">
+              <mdui-card v-for="group in groups" :key="group.id" variant="outlined" class="content-card">
+                <div class="card-top">
+                  <div class="card-icon"><mdui-icon name="folder"></mdui-icon></div>
+                  <div class="card-copy">
+                    <h3 class="card-title">{{ group.name }}</h3>
+                    <div class="card-meta">
+                      创建于 {{ formatDate(group.createdAt) }}
+                      <span v-if="group.updatedAt"> · 更新于 {{ formatDate(group.updatedAt) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="url-field">
+                  <code :title="getSubscriptionUrl(group.id)">{{ getSubscriptionUrl(group.id) }}</code>
+                  <mdui-tooltip content="复制订阅地址">
+                    <mdui-button-icon variant="tonal" icon="content_copy" @click="copyUrl(group.id)"></mdui-button-icon>
+                  </mdui-tooltip>
+                </div>
+                <div class="card-actions">
+                  <mdui-button variant="text" icon="edit" @click="showEditModal(group)">编辑</mdui-button>
+                  <mdui-button class="danger-action" variant="text" icon="delete" @click="deleteGroup(group.id)">删除</mdui-button>
+                </div>
+              </mdui-card>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-heading">
+              <h2 class="section-title"><mdui-icon name="hub"></mdui-icon>节点 <span class="count-badge">{{ nodes.length }}</span></h2>
+            </div>
+            <div v-if="nodes.length === 0" class="empty-state">
+              <div>
+                <mdui-icon name="device_hub"></mdui-icon>
+                <h3>还没有节点</h3>
+                <p>先添加节点，再将它们组合成订阅分组。</p>
+              </div>
+            </div>
+            <div v-else class="card-grid">
+              <mdui-card v-for="node in nodes" :key="node.id" variant="outlined" class="content-card">
+                <div class="card-top">
+                  <div class="card-icon"><mdui-icon name="lan"></mdui-icon></div>
+                  <div class="card-copy"><h3 class="card-title">{{ node.name }}</h3></div>
+                </div>
+                <div class="proxy-field"><code :title="node.proxy">{{ node.proxy }}</code></div>
+                <div class="status-row" :class="{ enabled: node.usePreferredHosts }">
+                  <mdui-icon :name="node.usePreferredHosts ? 'check_circle' : 'info'"></mdui-icon>
+                  <span v-if="node.usePreferredHosts">已启用优选 Host（{{ preferredHosts.length }} 个）</span>
+                  <span v-else>输出原始节点</span>
+                </div>
+                <div class="card-actions">
+                  <mdui-button variant="text" icon="edit" @click="showEditNodeModal(node)">编辑</mdui-button>
+                  <mdui-button class="danger-action" variant="text" icon="delete" @click="deleteNode(node.id)">删除</mdui-button>
+                </div>
+              </mdui-card>
+            </div>
+          </section>
+        </main>
+
+        <mdui-dialog :open="showModal" close-on-esc close-on-overlay-click @closed="closeModal">
+          <span slot="headline">{{ isEditing ? '编辑分组' : '添加分组' }}</span>
+          <form id="group-form" class="dialog-body dialog-form" @submit.prevent="saveGroup">
+            <mdui-text-field class="form-field" variant="outlined" label="分组名称" placeholder="例如：机场订阅、自用节点等" required :value="formData.name" @input="formData.name = $event.target.value"></mdui-text-field>
+            <div>
+              <span class="field-label">选择节点</span>
+              <div v-if="nodes.length === 0" class="helper">请先添加节点。</div>
+              <div v-else class="selection-list">
+                <label v-for="node in nodes" :key="node.id" class="selection-item">
+                  <mdui-checkbox :checked="formData.nodeIds.includes(node.id)" @change="toggleNodeSelection(node.id, $event.target.checked)"></mdui-checkbox>
+                  <span>{{ node.name }}</span>
+                </label>
+              </div>
+              <p class="helper">已启用优选 Host 的节点会按统一 Host 列表生成订阅。</p>
+            </div>
+          </form>
+          <div slot="action" class="dialog-actions">
+            <mdui-button variant="text" @click="closeModal">取消</mdui-button>
+            <mdui-button type="submit" form="group-form" variant="filled">{{ isEditing ? '保存修改' : '创建分组' }}</mdui-button>
+          </div>
+        </mdui-dialog>
+
+        <mdui-dialog :open="showNodeModal" close-on-esc close-on-overlay-click @closed="closeNodeModal">
+          <span slot="headline">{{ isEditingNode ? '编辑节点' : '添加节点' }}</span>
+          <form id="node-form" class="dialog-body dialog-form" @submit.prevent="saveNode">
+            <mdui-text-field class="form-field" variant="outlined" label="节点名称（可选）" placeholder="例如：日本节点" :value="nodeForm.name" @input="nodeForm.name = $event.target.value"></mdui-text-field>
+            <mdui-text-field class="form-field" variant="outlined" autosize min-rows="4" max-rows="8" label="节点地址" placeholder="请输入 vless:// 节点地址" required :value="nodeForm.proxy" @input="nodeForm.proxy = $event.target.value"></mdui-text-field>
+            <label class="switch-row">
+              <span>启用优选 Host</span>
+              <mdui-switch :checked="nodeForm.usePreferredHosts" @change="nodeForm.usePreferredHosts = $event.target.checked"></mdui-switch>
+            </label>
+            <p class="helper">启用后会为每个统一管理的优选 Host 生成一条节点；未启用时原样输出节点。</p>
+          </form>
+          <div slot="action" class="dialog-actions">
+            <mdui-button variant="text" @click="closeNodeModal">取消</mdui-button>
+            <mdui-button type="submit" form="node-form" variant="filled">{{ isEditingNode ? '保存修改' : '添加节点' }}</mdui-button>
+          </div>
+        </mdui-dialog>
+
+        <mdui-dialog :open="showPreferredHostsModal" close-on-esc close-on-overlay-click @closed="closePreferredHostsModal">
+          <span slot="headline">管理优选 Host</span>
+          <form id="hosts-form" class="dialog-body dialog-form" @submit.prevent="savePreferredHosts">
+            <div>
+              <div v-for="(host, index) in preferredHostsForm" :key="index" class="host-row-new">
+                <mdui-text-field variant="outlined" label="标签" placeholder="如电信" :value="host.label" @input="host.label = $event.target.value"></mdui-text-field>
+                <mdui-text-field variant="outlined" label="Host" placeholder="如 0.0.0.0" :value="host.value" @input="host.value = $event.target.value"></mdui-text-field>
+                <mdui-tooltip content="移除">
+                  <mdui-button-icon class="danger-action" icon="remove_circle" @click="removePreferredHost(index)"></mdui-button-icon>
+                </mdui-tooltip>
+              </div>
+              <mdui-button variant="text" icon="add" @click="addPreferredHost">添加优选 Host</mdui-button>
+              <p class="helper">启用优选 Host 的节点会使用此处全部 Host，并在节点名称后追加标签。</p>
+            </div>
+          </form>
+          <div slot="action" class="dialog-actions">
+            <mdui-button variant="text" @click="closePreferredHostsModal">取消</mdui-button>
+            <mdui-button type="submit" form="hosts-form" variant="filled">保存</mdui-button>
+          </div>
+        </mdui-dialog>
+
+        <mdui-dialog :open="showPasswordModal" close-on-esc close-on-overlay-click @closed="closePasswordModal">
+          <span slot="headline">修改密码</span>
+          <form id="password-form" class="dialog-body dialog-form" @submit.prevent="changePassword">
+            <mdui-text-field class="form-field" variant="outlined" type="password" label="原密码" required :value="passwordForm.oldPassword" @input="passwordForm.oldPassword = $event.target.value"></mdui-text-field>
+            <mdui-text-field class="form-field" variant="outlined" type="password" toggle-password label="新密码" required :value="passwordForm.newPassword" @input="passwordForm.newPassword = $event.target.value"></mdui-text-field>
+            <mdui-text-field class="form-field" variant="outlined" type="password" toggle-password label="确认新密码" required :value="passwordForm.confirmPassword" @input="passwordForm.confirmPassword = $event.target.value"></mdui-text-field>
+          </form>
+          <div slot="action" class="dialog-actions">
+            <mdui-button variant="text" @click="closePasswordModal">取消</mdui-button>
+            <mdui-button type="submit" form="password-form" variant="filled">确认修改</mdui-button>
+          </div>
+        </mdui-dialog>
+      </template>
     </div>
 
     <script src="https://fastly.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js"></script>
@@ -890,7 +1111,7 @@
         return config;
       });
 
-      createApp({
+      const app = createApp({
         data() {
           return {
             loading: true,
@@ -1026,9 +1247,15 @@
           },
           closeModal() {
             this.showModal = false;
-            this.isEditing = false;
-            this.editingGroupId = null;
-            this.formData = { name: "", nodeIds: [] };
+          },
+          toggleNodeSelection(nodeId, checked) {
+            if (checked && !this.formData.nodeIds.includes(nodeId)) {
+              this.formData.nodeIds.push(nodeId);
+            } else if (!checked) {
+              this.formData.nodeIds = this.formData.nodeIds.filter(
+                (id) => id !== nodeId
+              );
+            }
           },
           showAddNodeModal() {
             this.isEditingNode = false;
@@ -1048,9 +1275,6 @@
           },
           closeNodeModal() {
             this.showNodeModal = false;
-            this.isEditingNode = false;
-            this.editingNodeId = null;
-            this.nodeForm = { name: "", proxy: "", usePreferredHosts: false };
           },
           openPreferredHostsModal() {
             this.preferredHostsForm = this.preferredHosts.map((host) => ({ ...host }));
@@ -1098,7 +1322,17 @@
             }
           },
           async deleteNode(id) {
-            if (!confirm("删除节点后，引用它的分组也会移除该节点，确定继续吗？")) return;
+            try {
+              await mdui.confirm({
+                headline: "删除节点？",
+                description: "删除后，引用它的分组也会移除该节点。此操作无法撤销。",
+                confirmText: "删除",
+                cancelText: "取消",
+                icon: "warning",
+              });
+            } catch (error) {
+              return;
+            }
             try {
               await api.delete(`/api/nodes/${id}`);
               this.showToast("节点已删除", "success");
@@ -1117,11 +1351,6 @@
           },
           closePasswordModal() {
             this.showPasswordModal = false;
-            this.passwordForm = {
-              oldPassword: "",
-              newPassword: "",
-              confirmPassword: "",
-            };
           },
           async changePassword() {
             if (
@@ -1168,7 +1397,17 @@
             }
           },
           async deleteGroup(id) {
-            if (!confirm("确定要删除这个分组吗？")) return;
+            try {
+              await mdui.confirm({
+                headline: "删除订阅分组？",
+                description: "该分组的订阅地址将立即失效，此操作无法撤销。",
+                confirmText: "删除",
+                cancelText: "取消",
+                icon: "delete",
+              });
+            } catch (error) {
+              return;
+            }
             try {
               await api.delete(`/api/groups/${id}`);
               this.showToast("分组已删除", "success");
@@ -1208,14 +1447,19 @@
             });
           },
           showToast(message, type = "success") {
-            this.toast.message = message;
-            this.toast.type = type;
-            setTimeout(() => {
-              this.toast.message = "";
-            }, 3000);
+            mdui.snackbar({
+              message,
+              placement: "bottom",
+              closeable: type === "error",
+              autoCloseDelay: type === "error" ? 4500 : 3000,
+            });
           },
         },
-      }).mount("#app");
+      });
+
+      app.config.compilerOptions.isCustomElement = (tag) =>
+        tag.startsWith("mdui-");
+      app.mount("#app");
     </script>
   </body>
 </html>
