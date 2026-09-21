@@ -33,7 +33,7 @@
 
       body {
         font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #f9f9ff;
         background-attachment: fixed;
         min-height: 100%;
         padding: 40px 20px;
@@ -138,7 +138,7 @@
       }
 
       .btn-primary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #415d93;
         color: white;
         width: 100%;
       }
@@ -222,7 +222,7 @@
       }
 
       .add-btn {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #415d93;
         color: white;
         border: none;
         padding: 12px 24px;
@@ -508,11 +508,11 @@
       }
 
       .toast.success {
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        background: #2e7d6d;
       }
 
       .toast.error {
-        background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        background: #ba1a1a;
       }
 
       @keyframes slideIn {
@@ -879,7 +879,7 @@
         <mdui-card variant="elevated" class="login-card">
           <form @submit.prevent="handleLogin">
             <div class="login-brand">
-              <div class="login-icon"><mdui-icon name="shield_lock"></mdui-icon></div>
+              <div class="login-icon"><mdui-icon name="shield"></mdui-icon></div>
               <h1>订阅管理</h1>
               <p>登录后管理节点与订阅分组</p>
             </div>
@@ -889,13 +889,12 @@
               type="password"
               toggle-password
               label="管理密码"
-              icon="lock"
               autocomplete="current-password"
               required
               :value="loginForm.password"
               @input="loginForm.password = $event.target.value"
             ></mdui-text-field>
-            <mdui-button class="login-submit" type="submit" variant="filled" icon="login">登录</mdui-button>
+            <mdui-button class="login-submit" type="submit" variant="filled" icon="login" :loading="loginSubmitting" :disabled="loginSubmitting">登录</mdui-button>
           </form>
         </mdui-card>
       </main>
@@ -964,7 +963,7 @@
                 </div>
                 <div class="card-actions">
                   <mdui-button variant="text" icon="edit" @click="showEditModal(group)">编辑</mdui-button>
-                  <mdui-button class="danger-action" variant="text" icon="delete" @click="deleteGroup(group.id)">删除</mdui-button>
+                  <mdui-button class="danger-action" variant="text" icon="delete" :loading="deletingGroupId === group.id" :disabled="deletingGroupId !== null" @click="deleteGroup(group.id)">删除</mdui-button>
                 </div>
               </mdui-card>
             </div>
@@ -995,14 +994,14 @@
                 </div>
                 <div class="card-actions">
                   <mdui-button variant="text" icon="edit" @click="showEditNodeModal(node)">编辑</mdui-button>
-                  <mdui-button class="danger-action" variant="text" icon="delete" @click="deleteNode(node.id)">删除</mdui-button>
+                  <mdui-button class="danger-action" variant="text" icon="delete" :loading="deletingNodeId === node.id" :disabled="deletingNodeId !== null" @click="deleteNode(node.id)">删除</mdui-button>
                 </div>
               </mdui-card>
             </div>
           </section>
         </main>
 
-        <mdui-dialog :open="showModal" close-on-esc close-on-overlay-click @closed="closeModal">
+        <mdui-dialog :open="showModal" close-on-esc @closed="closeModal">
           <span slot="headline">{{ isEditing ? '编辑分组' : '添加分组' }}</span>
           <form id="group-form" class="dialog-body dialog-form" @submit.prevent="saveGroup">
             <mdui-text-field class="form-field" variant="outlined" label="分组名称" placeholder="例如：机场订阅、自用节点等" required :value="formData.name" @input="formData.name = $event.target.value"></mdui-text-field>
@@ -1020,11 +1019,11 @@
           </form>
           <div slot="action" class="dialog-actions">
             <mdui-button variant="text" @click="closeModal">取消</mdui-button>
-            <mdui-button type="submit" form="group-form" variant="filled">{{ isEditing ? '保存修改' : '创建分组' }}</mdui-button>
+            <mdui-button type="submit" form="group-form" variant="filled" :loading="groupSubmitting" :disabled="groupSubmitting">{{ isEditing ? '保存修改' : '创建分组' }}</mdui-button>
           </div>
         </mdui-dialog>
 
-        <mdui-dialog :open="showNodeModal" close-on-esc close-on-overlay-click @closed="closeNodeModal">
+        <mdui-dialog :open="showNodeModal" close-on-esc @closed="closeNodeModal">
           <span slot="headline">{{ isEditingNode ? '编辑节点' : '添加节点' }}</span>
           <form id="node-form" class="dialog-body dialog-form" @submit.prevent="saveNode">
             <mdui-text-field class="form-field" variant="outlined" label="节点名称（可选）" placeholder="例如：日本节点" :value="nodeForm.name" @input="nodeForm.name = $event.target.value"></mdui-text-field>
@@ -1037,11 +1036,11 @@
           </form>
           <div slot="action" class="dialog-actions">
             <mdui-button variant="text" @click="closeNodeModal">取消</mdui-button>
-            <mdui-button type="submit" form="node-form" variant="filled">{{ isEditingNode ? '保存修改' : '添加节点' }}</mdui-button>
+            <mdui-button type="submit" form="node-form" variant="filled" :loading="nodeSubmitting" :disabled="nodeSubmitting">{{ isEditingNode ? '保存修改' : '添加节点' }}</mdui-button>
           </div>
         </mdui-dialog>
 
-        <mdui-dialog :open="showPreferredHostsModal" close-on-esc close-on-overlay-click @closed="closePreferredHostsModal">
+        <mdui-dialog :open="showPreferredHostsModal" close-on-esc @closed="closePreferredHostsModal">
           <span slot="headline">管理优选 Host</span>
           <form id="hosts-form" class="dialog-body dialog-form" @submit.prevent="savePreferredHosts">
             <div>
@@ -1058,11 +1057,11 @@
           </form>
           <div slot="action" class="dialog-actions">
             <mdui-button variant="text" @click="closePreferredHostsModal">取消</mdui-button>
-            <mdui-button type="submit" form="hosts-form" variant="filled">保存</mdui-button>
+            <mdui-button type="submit" form="hosts-form" variant="filled" :loading="hostsSubmitting" :disabled="hostsSubmitting">保存</mdui-button>
           </div>
         </mdui-dialog>
 
-        <mdui-dialog :open="showPasswordModal" close-on-esc close-on-overlay-click @closed="closePasswordModal">
+        <mdui-dialog :open="showPasswordModal" close-on-esc @closed="closePasswordModal">
           <span slot="headline">修改密码</span>
           <form id="password-form" class="dialog-body dialog-form" @submit.prevent="changePassword">
             <mdui-text-field class="form-field" variant="outlined" type="password" label="原密码" required :value="passwordForm.oldPassword" @input="passwordForm.oldPassword = $event.target.value"></mdui-text-field>
@@ -1071,7 +1070,7 @@
           </form>
           <div slot="action" class="dialog-actions">
             <mdui-button variant="text" @click="closePasswordModal">取消</mdui-button>
-            <mdui-button type="submit" form="password-form" variant="filled">确认修改</mdui-button>
+            <mdui-button type="submit" form="password-form" variant="filled" :loading="passwordSubmitting" :disabled="passwordSubmitting">确认修改</mdui-button>
           </div>
         </mdui-dialog>
       </template>
@@ -1116,6 +1115,13 @@
           return {
             loading: true,
             isLoggedIn: false,
+            loginSubmitting: false,
+            groupSubmitting: false,
+            nodeSubmitting: false,
+            hostsSubmitting: false,
+            passwordSubmitting: false,
+            deletingGroupId: null,
+            deletingNodeId: null,
             loginForm: {
               password: "",
             },
@@ -1180,6 +1186,8 @@
             }
           },
           async handleLogin() {
+            if (this.loginSubmitting) return;
+            this.loginSubmitting = true;
             try {
               const { data } = await axios.post("/api/login", {
                 password: md5(this.loginForm.password),
@@ -1195,6 +1203,8 @@
               this.showToast("登录成功", "success");
             } catch (error) {
               this.showToast("密码错误", "error");
+            } finally {
+              this.loginSubmitting = false;
             }
           },
           handleLogout() {
@@ -1290,6 +1300,8 @@
             this.preferredHostsForm.splice(index, 1);
           },
           async savePreferredHosts() {
+            if (this.hostsSubmitting) return;
+            this.hostsSubmitting = true;
             try {
               const { data } = await api.put("/api/preferred-hosts", {
                 preferredHosts: this.preferredHostsForm,
@@ -1299,9 +1311,13 @@
               this.showToast("优选 Host 已保存", "success");
             } catch (error) {
               this.showToast("保存优选 Host 失败", "error");
+            } finally {
+              this.hostsSubmitting = false;
             }
           },
           async saveNode() {
+            if (this.nodeSubmitting) return;
+            this.nodeSubmitting = true;
             const payload = {
               name: this.nodeForm.name,
               proxy: this.nodeForm.proxy,
@@ -1319,9 +1335,12 @@
               await this.loadNodes();
             } catch (error) {
               this.showToast(error.response?.data?.error || "保存节点失败", "error");
+            } finally {
+              this.nodeSubmitting = false;
             }
           },
           async deleteNode(id) {
+            if (this.deletingNodeId !== null) return;
             try {
               await mdui.confirm({
                 headline: "删除节点？",
@@ -1333,12 +1352,15 @@
             } catch (error) {
               return;
             }
+            this.deletingNodeId = id;
             try {
               await api.delete(`/api/nodes/${id}`);
               this.showToast("节点已删除", "success");
               await Promise.all([this.loadNodes(), this.loadGroups()]);
             } catch (error) {
               this.showToast("删除节点失败", "error");
+            } finally {
+              this.deletingNodeId = null;
             }
           },
           openPasswordModal() {
@@ -1353,6 +1375,7 @@
             this.showPasswordModal = false;
           },
           async changePassword() {
+            if (this.passwordSubmitting) return;
             if (
               this.passwordForm.newPassword !==
               this.passwordForm.confirmPassword
@@ -1360,6 +1383,7 @@
               this.showToast("两次输入的新密码不一致", "error");
               return;
             }
+            this.passwordSubmitting = true;
             try {
               await api.put("/api/password", {
                 oldPassword: md5(this.passwordForm.oldPassword),
@@ -1370,13 +1394,17 @@
             } catch (error) {
               const msg = error.response?.data?.error || "修改失败";
               this.showToast(msg, "error");
+            } finally {
+              this.passwordSubmitting = false;
             }
           },
           async saveGroup() {
+            if (this.groupSubmitting) return;
             if (!this.formData.nodeIds.length) {
               this.showToast("请至少选择一个节点", "error");
               return;
             }
+            this.groupSubmitting = true;
             try {
               const payload = {
                 name: this.formData.name,
@@ -1394,9 +1422,12 @@
               await this.loadGroups();
             } catch (error) {
               this.showToast("保存失败", "error");
+            } finally {
+              this.groupSubmitting = false;
             }
           },
           async deleteGroup(id) {
+            if (this.deletingGroupId !== null) return;
             try {
               await mdui.confirm({
                 headline: "删除订阅分组？",
@@ -1408,12 +1439,15 @@
             } catch (error) {
               return;
             }
+            this.deletingGroupId = id;
             try {
               await api.delete(`/api/groups/${id}`);
               this.showToast("分组已删除", "success");
               await this.loadGroups();
             } catch (error) {
               this.showToast("删除失败", "error");
+            } finally {
+              this.deletingGroupId = null;
             }
           },
           getSubscriptionUrl(id) {

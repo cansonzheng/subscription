@@ -23,6 +23,12 @@ The server listens on port `3000` by default; set `PORT` to override it. There i
 
 Use two-space indentation, semicolons, double-quoted JavaScript strings, and small focused functions, matching the existing CommonJS code. Use `camelCase` for variables and functions, `UPPER_SNAKE_CASE` for constants such as `JWT_SECRET`, and descriptive route names under `/api/`. Keep user-facing text consistent with the existing Simplified Chinese UI. Preserve the existing four-space HTML/CSS indentation and grouped inline styles in `public/index.html`.
 
+## UI Library
+
+The client uses MDUI 2 and follows its Material Design 3 component conventions. When adding or changing UI components, consult the official MDUI documentation first:
+
+- https://www.mdui.org/zh-cn/docs/2/llms.txt
+
 ## Testing Guidelines
 
 No testing framework or coverage threshold is configured. For each change, manually test login, authenticated API access, subscription/group operations, and persistence when applicable. If adding tests, place server tests under `test/`, use names such as `auth.test.js`, and add an executable `npm test` script.
