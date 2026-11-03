@@ -1193,14 +1193,9 @@
                 password: md5(this.loginForm.password),
               });
               setToken(data.token);
-              this.isLoggedIn = true;
               this.loginForm.password = "";
-              await Promise.all([
-                this.loadNodes(),
-                this.loadGroups(),
-                this.loadPreferredHosts(),
-              ]);
-              this.showToast("登录成功", "success");
+              // Replace any form-submission history entry with a fresh GET navigation.
+              window.location.replace(window.location.pathname + window.location.search);
             } catch (error) {
               this.showToast("密码错误", "error");
             } finally {

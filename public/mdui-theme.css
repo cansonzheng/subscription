@@ -482,10 +482,7 @@ mdui-dialog::part(headline) {
   }
 
   .host-row-new {
-    grid-template-columns: 1fr auto;
-  }
-
-  .host-row-new mdui-text-field:first-child {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) auto;
+    gap: 6px;
   }
 }
