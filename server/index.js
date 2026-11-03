@@ -1,69 +1,66 @@
-const Koa = require("koa");
-const Router = require("koa-router");
-const bodyParser = require("koa-bodyparser");
-const serve = require("koa-static");
-const jwt = require("jsonwebtoken");
-const CryptoJS = require("crypto-js");
-const { v4: uuidv4 } = require("uuid");
-const path = require("path");
-const { loadData, saveData } = require("./data");
+import { Hono } from "hono";
+import { SignJWT, jwtVerify } from "jose";
+import CryptoJS from "crypto-js";
+import { loadData, saveData } from "./data.js";
 
-const app = new Koa();
-const router = new Router();
+const app = new Hono();
 
-// 配置
-const PORT = process.env.PORT || 3000;
-const JWT_SECRET =
-  process.env.JWT_SECRET || "v2ray-subscription-jwt-secret-key-2026";
-const TOKEN_EXPIRY = "24h";
-const SUBSCRIPTION_UA_SECRET = process.env.SUBSCRIPTION_UA_SECRET;
-
-// 全局限流记录：{ lastAccess: timestamp }
-let rateLimitRecord = null;
-const RATE_LIMIT_WINDOW = 10 * 1000; // 10 秒
-
-// MD5 加密
-function md5(str) {
-  return CryptoJS.MD5(str).toString();
+function md5(value) {
+  return CryptoJS.MD5(value).toString();
 }
 
-// 验证 JWT Token
-function verifyToken(token) {
+function jwtKey(secret) {
+  if (!secret) throw new Error("JWT_SECRET is required");
+  return new TextEncoder().encode(secret);
+}
+
+async function verifyToken(token, secret) {
   try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (e) {
+    const { payload } = await jwtVerify(token, jwtKey(secret), { algorithms: ["HS256"] });
+    return payload.loggedIn === true ? payload : null;
+  } catch {
     return null;
   }
 }
 
-// 生成 JWT Token
-function generateToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+function generateToken(payload, secret) {
+  return new SignJWT(payload).setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt().setExpirationTime("24h").sign(jwtKey(secret));
 }
 
-// 中间件
-app.use(bodyParser());
-app.use(serve(path.join(__dirname, "../public")));
+async function readBody(ctx) {
+  try {
+    const body = await ctx.req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error();
+    return body;
+  } catch {
+    throw Object.assign(new Error("请求体必须为 JSON 对象"), { status: 400 });
+  }
+}
 
-// 认证中间件
+function toBase64(value) {
+  return btoa(Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join(""));
+}
+
+app.onError((error, ctx) => {
+  if (error.status === 400) return ctx.json({ error: error.message }, 400);
+  console.error("请求处理失败:", error.message);
+  return ctx.json({ error: "服务暂时不可用，请稍后重试" }, 500);
+});
+
+app.use("/api/*", async (ctx, next) => {
+  ctx.header("Cache-Control", "no-store");
+  jwtKey(ctx.env.JWT_SECRET);
+  await next();
+});
+
 const requireAuth = async (ctx, next) => {
-  const authHeader = ctx.headers.authorization;
+  const authHeader = ctx.req.header("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    ctx.status = 401;
-    ctx.body = { error: "未授权访问" };
-    return;
+    return ctx.json({ error: "未授权访问" }, 401);
   }
-
-  const token = authHeader.substring(7);
-  const decoded = verifyToken(token);
-
-  if (!decoded) {
-    ctx.status = 401;
-    ctx.body = { error: "Token 无效或已过期" };
-    return;
-  }
-
-  ctx.user = decoded;
+  const decoded = await verifyToken(authHeader.substring(7), ctx.env.JWT_SECRET);
+  if (!decoded) return ctx.json({ error: "Token 无效或已过期" }, 401);
   await next();
 };
 
@@ -116,183 +113,164 @@ function getGroupProxies(group, data) {
 
 // API 路由
 // 登录
-router.post("/api/login", async (ctx) => {
-  const { password } = ctx.request.body;
+app.post("/api/login", async (ctx) => {
+  const { password } = await readBody(ctx);
 
-  if (!password) {
-    ctx.status = 400;
-    ctx.body = { error: "缺少密码" };
-    return;
+  if (typeof password !== "string" || !password) {
+    return ctx.json({ error: "缺少密码" }, 400);
   }
 
-  const data = loadData();
+  const data = await loadData(ctx.env);
   // 前端已做 MD5 加密，后端再加一层 MD5 后比较
-  const storedPassword = data.adminPassword || md5(md5("admin123"));
+  const storedPassword = data.adminPassword;
   const inputPassword = md5(password);
 
   if (inputPassword === storedPassword) {
-    const token = generateToken({
+    const token = await generateToken({
       loggedIn: true,
       iat: Math.floor(Date.now() / 1000),
-    });
-    ctx.body = { success: true, token };
+    }, ctx.env.JWT_SECRET);
+    return ctx.json({ success: true, token });
   } else {
-    ctx.status = 401;
-    ctx.body = { error: "密码错误" };
+    return ctx.json({ error: "密码错误" }, 401);
   }
 });
 
 // 检查登录状态
-router.get("/api/auth/status", async (ctx) => {
-  const authHeader = ctx.headers.authorization;
+app.get("/api/auth/status", async (ctx) => {
+  const authHeader = ctx.req.header("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    ctx.body = { loggedIn: false };
-    return;
+    return ctx.json({ loggedIn: false });
   }
 
   const token = authHeader.substring(7);
-  const decoded = verifyToken(token);
+  const decoded = await verifyToken(token, ctx.env.JWT_SECRET);
 
-  ctx.body = { loggedIn: !!decoded };
+  return ctx.json({ loggedIn: !!decoded });
 });
 
 // 修改密码
-router.put("/api/password", requireAuth, async (ctx) => {
-  const { oldPassword, newPassword } = ctx.request.body;
+app.put("/api/password", requireAuth, async (ctx) => {
+  const { oldPassword, newPassword } = await readBody(ctx);
 
-  if (!oldPassword || !newPassword) {
-    ctx.status = 400;
-    ctx.body = { error: "缺少必要参数" };
-    return;
+  if (typeof oldPassword !== "string" || typeof newPassword !== "string" || !oldPassword || !newPassword) {
+    return ctx.json({ error: "缺少必要参数" }, 400);
   }
 
-  const data = loadData();
+  const data = await loadData(ctx.env);
   // 前端已做 MD5 加密，后端再加一层 MD5 后比较
-  const storedPassword = data.adminPassword || md5(md5("admin123"));
+  const storedPassword = data.adminPassword;
   const inputOldPassword = md5(oldPassword);
 
   if (inputOldPassword !== storedPassword) {
-    ctx.status = 401;
-    ctx.body = { error: "原密码错误" };
-    return;
+    return ctx.json({ error: "原密码错误" }, 401);
   }
 
   // 新密码也做双层 MD5 存储
   data.adminPassword = md5(newPassword);
-  saveData(data);
+  await saveData(ctx.env, data);
 
-  ctx.body = { success: true };
+  return ctx.json({ success: true });
 });
 
 // 获取和保存统一管理的优选 Host
-router.get("/api/preferred-hosts", requireAuth, async (ctx) => {
-  const data = loadData();
-  ctx.body = { preferredHosts: cleanPreferredHosts(data.preferredHosts) };
+app.get("/api/preferred-hosts", requireAuth, async (ctx) => {
+  const data = await loadData(ctx.env);
+  return ctx.json({ preferredHosts: cleanPreferredHosts(data.preferredHosts) });
 });
 
-router.put("/api/preferred-hosts", requireAuth, async (ctx) => {
-  const data = loadData();
-  data.preferredHosts = cleanPreferredHosts(ctx.request.body.preferredHosts);
-  saveData(data);
-  ctx.body = { success: true, preferredHosts: data.preferredHosts };
+app.put("/api/preferred-hosts", requireAuth, async (ctx) => {
+  const data = await loadData(ctx.env);
+  const { preferredHosts } = await readBody(ctx);
+  data.preferredHosts = cleanPreferredHosts(preferredHosts);
+  await saveData(ctx.env, data);
+  return ctx.json({ success: true, preferredHosts: data.preferredHosts });
 });
 
 // 获取所有节点
-router.get("/api/nodes", requireAuth, async (ctx) => {
-  const data = loadData();
-  ctx.body = { nodes: data.nodes };
+app.get("/api/nodes", requireAuth, async (ctx) => {
+  const data = await loadData(ctx.env);
+  return ctx.json({ nodes: data.nodes });
 });
 
 // 创建节点
-router.post("/api/nodes", requireAuth, async (ctx) => {
-  const { name, proxy, usePreferredHosts } = ctx.request.body;
+app.post("/api/nodes", requireAuth, async (ctx) => {
+  const { name, proxy, usePreferredHosts } = await readBody(ctx);
   if (!proxy || typeof proxy !== "string" || !proxy.trim()) {
-    ctx.status = 400;
-    ctx.body = { error: "请输入节点地址" };
-    return;
+    return ctx.json({ error: "请输入节点地址" }, 400);
   }
 
-  const data = loadData();
+  const data = await loadData(ctx.env);
   const node = {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     name: String(name || "").trim() || "未命名节点",
     proxy: proxy.trim(),
     usePreferredHosts: usePreferredHosts === true,
     createdAt: new Date().toISOString(),
   };
   data.nodes.push(node);
-  saveData(data);
-  ctx.body = { success: true, node };
+  await saveData(ctx.env, data);
+  return ctx.json({ success: true, node });
 });
 
 // 更新节点
-router.put("/api/nodes/:id", requireAuth, async (ctx) => {
-  const { name, proxy, usePreferredHosts } = ctx.request.body;
-  const data = loadData();
-  const node = data.nodes.find((item) => item.id === ctx.params.id);
+app.put("/api/nodes/:id", requireAuth, async (ctx) => {
+  const { name, proxy, usePreferredHosts } = await readBody(ctx);
+  const data = await loadData(ctx.env);
+  const node = data.nodes.find((item) => item.id === ctx.req.param("id"));
   if (!node) {
-    ctx.status = 404;
-    ctx.body = { error: "节点不存在" };
-    return;
+    return ctx.json({ error: "节点不存在" }, 404);
   }
   if (!proxy || typeof proxy !== "string" || !proxy.trim()) {
-    ctx.status = 400;
-    ctx.body = { error: "请输入节点地址" };
-    return;
+    return ctx.json({ error: "请输入节点地址" }, 400);
   }
   node.name = String(name || "").trim() || "未命名节点";
   node.proxy = proxy.trim();
   node.usePreferredHosts = usePreferredHosts === true;
   node.updatedAt = new Date().toISOString();
-  saveData(data);
-  ctx.body = { success: true, node };
+  await saveData(ctx.env, data);
+  return ctx.json({ success: true, node });
 });
 
 // 删除节点
-router.delete("/api/nodes/:id", requireAuth, async (ctx) => {
-  const data = loadData();
-  const index = data.nodes.findIndex((node) => node.id === ctx.params.id);
+app.delete("/api/nodes/:id", requireAuth, async (ctx) => {
+  const data = await loadData(ctx.env);
+  const index = data.nodes.findIndex((node) => node.id === ctx.req.param("id"));
   if (index === -1) {
-    ctx.status = 404;
-    ctx.body = { error: "节点不存在" };
-    return;
+    return ctx.json({ error: "节点不存在" }, 404);
   }
   data.nodes.splice(index, 1);
   data.groups.forEach((group) => {
     if (Array.isArray(group.nodeIds)) {
-      group.nodeIds = group.nodeIds.filter((id) => id !== ctx.params.id);
+      group.nodeIds = group.nodeIds.filter((id) => id !== ctx.req.param("id"));
     }
   });
-  saveData(data);
-  ctx.body = { success: true };
+  await saveData(ctx.env, data);
+  return ctx.json({ success: true });
 });
 
 // 获取所有分组
-router.get("/api/groups", requireAuth, async (ctx) => {
-  const data = loadData();
-  ctx.body = { groups: data.groups };
+app.get("/api/groups", requireAuth, async (ctx) => {
+  const data = await loadData(ctx.env);
+  return ctx.json({ groups: data.groups });
 });
 
 // 创建分组
-router.post("/api/groups", requireAuth, async (ctx) => {
-  const { name, nodeIds, proxies } = ctx.request.body;
+app.post("/api/groups", requireAuth, async (ctx) => {
+  const { name, nodeIds, proxies } = await readBody(ctx);
 
   if (!name || (!Array.isArray(nodeIds) && !Array.isArray(proxies))) {
-    ctx.status = 400;
-    ctx.body = { error: "缺少必要参数" };
-    return;
+    return ctx.json({ error: "缺少必要参数" }, 400);
   }
 
-  const data = loadData();
-  const uuid = uuidv4();
+  const data = await loadData(ctx.env);
+  const uuid = crypto.randomUUID();
 
   const filteredNodeIds = Array.isArray(nodeIds)
     ? nodeIds.filter((id) => data.nodes.some((node) => node.id === id))
     : null;
   if (Array.isArray(nodeIds) && filteredNodeIds.length === 0) {
-    ctx.status = 400;
-    ctx.body = { error: "请至少选择一个节点" };
-    return;
+    return ctx.json({ error: "请至少选择一个节点" }, 400);
   }
   const newGroup = {
     id: uuid,
@@ -300,25 +278,24 @@ router.post("/api/groups", requireAuth, async (ctx) => {
     nodeIds: filteredNodeIds,
     createdAt: new Date().toISOString(),
   };
+  if (!Array.isArray(nodeIds)) newGroup.proxies = proxies.filter((proxy) => typeof proxy === "string" && proxy.trim());
 
   data.groups.push(newGroup);
-  saveData(data);
+  await saveData(ctx.env, data);
 
-  ctx.body = { success: true, group: newGroup };
+  return ctx.json({ success: true, group: newGroup });
 });
 
 // 更新分组
-router.put("/api/groups/:id", requireAuth, async (ctx) => {
-  const { id } = ctx.params;
-  const { name, nodeIds, proxies } = ctx.request.body;
+app.put("/api/groups/:id", requireAuth, async (ctx) => {
+  const { id } = ctx.req.param();
+  const { name, nodeIds, proxies } = await readBody(ctx);
 
-  const data = loadData();
+  const data = await loadData(ctx.env);
   const groupIndex = data.groups.findIndex((g) => g.id === id);
 
   if (groupIndex === -1) {
-    ctx.status = 404;
-    ctx.body = { error: "分组不存在" };
-    return;
+    return ctx.json({ error: "分组不存在" }, 404);
   }
 
   // 过滤空行
@@ -326,9 +303,7 @@ router.put("/api/groups/:id", requireAuth, async (ctx) => {
     ? nodeIds.filter((nodeId) => data.nodes.some((node) => node.id === nodeId))
     : null;
   if (Array.isArray(nodeIds) && filteredNodeIds.length === 0) {
-    ctx.status = 400;
-    ctx.body = { error: "请至少选择一个节点" };
-    return;
+    return ctx.json({ error: "请至少选择一个节点" }, 400);
   }
   data.groups[groupIndex].name = name || data.groups[groupIndex].name;
   if (Array.isArray(nodeIds)) {
@@ -340,76 +315,63 @@ router.put("/api/groups/:id", requireAuth, async (ctx) => {
   }
   data.groups[groupIndex].updatedAt = new Date().toISOString();
 
-  saveData(data);
-  ctx.body = { success: true, group: data.groups[groupIndex] };
+  await saveData(ctx.env, data);
+  return ctx.json({ success: true, group: data.groups[groupIndex] });
 });
 
 // 删除分组
-router.delete("/api/groups/:id", requireAuth, async (ctx) => {
-  const { id } = ctx.params;
+app.delete("/api/groups/:id", requireAuth, async (ctx) => {
+  const { id } = ctx.req.param();
 
-  const data = loadData();
+  const data = await loadData(ctx.env);
   const groupIndex = data.groups.findIndex((g) => g.id === id);
 
   if (groupIndex === -1) {
-    ctx.status = 404;
-    ctx.body = { error: "分组不存在" };
-    return;
+    return ctx.json({ error: "分组不存在" }, 404);
   }
 
   data.groups.splice(groupIndex, 1);
-  saveData(data);
+  await saveData(ctx.env, data);
 
-  ctx.body = { success: true };
+  return ctx.json({ success: true });
 });
 
 // 订阅地址 - 获取分组内容（Base64 编码后的每行一个代理地址）
-router.get("/subscription/:id", async (ctx) => {
-  // 限流检查：每分钟只能有效访问一次（全局）- 放在最前面防止暴力扫描
-  const now = Date.now();
+app.get("/subscription/:id", async (ctx) => {
+  ctx.header("Cache-Control", "no-store");
+  // Cloudflare 原生限流：每个边缘位置的订阅请求共用 10 秒窗口。
 
-  if (rateLimitRecord && now - rateLimitRecord.lastAccess < RATE_LIMIT_WINDOW) {
+  if (!(await ctx.env.SUBSCRIPTION_RATE_LIMITER.limit({ key: "subscription" })).success) {
     // 在限流时间内，返回空内容
-    ctx.set("Content-Type", "text/plain; charset=utf-8");
-    ctx.body = "";
-    return;
+    ctx.header("Content-Type", "text/plain; charset=utf-8");
+    return ctx.text("");
   }
 
-  // 更新限流记录
-  rateLimitRecord = { lastAccess: now };
-
-  const { id } = ctx.params;
-  const data = loadData();
+  const { id } = ctx.req.param();
+  const data = await loadData(ctx.env);
   const group = data.groups.find((g) => g.id === id);
 
   // 分组不存在时返回空内容和 200 状态
   if (!group) {
-    ctx.set("Content-Type", "text/plain; charset=utf-8");
-    ctx.body = "";
-    return;
+    ctx.header("Content-Type", "text/plain; charset=utf-8");
+    return ctx.text("");
   }
 
   // UA 验证：如果配置了 SUBSCRIPTION_UA_SECRET，则验证 UA 是否包含该字符串
-  if (SUBSCRIPTION_UA_SECRET) {
-    const userAgent = ctx.headers["user-agent"] || "";
-    if (!userAgent.includes(SUBSCRIPTION_UA_SECRET)) {
-      ctx.set("Content-Type", "text/plain; charset=utf-8");
-      ctx.body = "";
-      return;
+  if (ctx.env.SUBSCRIPTION_UA_SECRET) {
+    const userAgent = ctx.req.header("User-Agent") || "";
+    if (!userAgent.includes(ctx.env.SUBSCRIPTION_UA_SECRET)) {
+      ctx.header("Content-Type", "text/plain; charset=utf-8");
+      return ctx.text("");
     }
   }
 
   // 将数组转换为每行一个的文本格式，再使用 UTF-8 做标准 Base64 编码。
   const content = getGroupProxies(group, data).join("\n");
-  ctx.set("Content-Type", "text/plain; charset=utf-8");
-  ctx.body = Buffer.from(content, "utf8").toString("base64");
+  ctx.header("Content-Type", "text/plain; charset=utf-8");
+  return ctx.text(toBase64(content));
 });
 
-app.use(router.routes());
-app.use(router.allowedMethods());
+app.notFound((ctx) => ctx.json({ error: "未找到请求的资源" }, 404));
 
-// 启动服务器
-app.listen(PORT, () => {
-  console.log(`服务器运行在 http://localhost:${PORT}`);
-  console.log(`管理界面：http://localhost:${PORT}/`);
-});
+export default app;

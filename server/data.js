@@ -1,14 +1,4 @@
-const fs = require("fs");
-const path = require("path");
-
-const DATA_FILE = path.join(__dirname, "../db.json");
-
-const defaultData = {
-  adminPassword: "admin123",
-  nodes: [],
-  groups: [],
-  preferredHosts: [],
-};
+export const DATA_KEY = "db";
 
 function getLegacyPreferredHosts(nodes) {
   const seen = new Set();
@@ -22,46 +12,36 @@ function getLegacyPreferredHosts(nodes) {
   });
 }
 
-function loadData() {
-  try {
-    if (!fs.existsSync(DATA_FILE)) {
-      saveData(defaultData);
-      return defaultData;
-    }
-    const data = fs.readFileSync(DATA_FILE, "utf8");
-    const parsed = JSON.parse(data);
-    const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
-    const hasManagedPreferredHosts = Array.isArray(parsed.preferredHosts);
-    return {
-      ...defaultData,
-      ...parsed,
-      // Migrate per-node Hosts from older data while preserving their output behavior.
-      nodes: nodes.map(({ preferredHosts, ...node }) => ({
-        ...node,
-        usePreferredHosts:
-          typeof node.usePreferredHosts === "boolean"
-            ? node.usePreferredHosts
-            : Array.isArray(preferredHosts) && preferredHosts.length > 0,
-      })),
-      groups: Array.isArray(parsed.groups) ? parsed.groups : [],
-      preferredHosts: hasManagedPreferredHosts
-        ? parsed.preferredHosts
-        : getLegacyPreferredHosts(nodes),
-    };
-  } catch (error) {
-    console.error("加载数据失败:", error);
-    return defaultData;
+export function normalizeData(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid subscription data");
   }
+  const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+  const hasManagedPreferredHosts = Array.isArray(parsed.preferredHosts);
+  return {
+    ...parsed,
+    // Migrate per-node Hosts from older data while preserving their output behavior.
+    nodes: nodes.map(({ preferredHosts, ...node }) => ({
+      ...node,
+      usePreferredHosts:
+        typeof node.usePreferredHosts === "boolean"
+          ? node.usePreferredHosts
+          : Array.isArray(preferredHosts) && preferredHosts.length > 0,
+    })),
+    groups: Array.isArray(parsed.groups) ? parsed.groups : [],
+    preferredHosts: hasManagedPreferredHosts
+      ? parsed.preferredHosts
+      : getLegacyPreferredHosts(nodes),
+  };
 }
 
-function saveData(data) {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
-    return true;
-  } catch (error) {
-    console.error("保存数据失败:", error);
-    return false;
-  }
+export async function loadData(env) {
+  const data = await env.SUBSCRIPTION_KV.get(DATA_KEY, "json");
+  // Missing or corrupt data must never silently replace existing subscriptions.
+  if (!data) throw new Error("KV data missing; migrate db.json before starting");
+  return normalizeData(data);
 }
 
-module.exports = { loadData, saveData, DATA_FILE };
+export async function saveData(env, data) {
+  await env.SUBSCRIPTION_KV.put(DATA_KEY, JSON.stringify(data));
+}

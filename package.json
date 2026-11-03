@@ -4,21 +4,22 @@
   "description": "订阅管理工具",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node server/index.js"
+    "start": "wrangler dev --port 3000",
+    "dev": "wrangler dev --port 3000",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run",
+    "migrate": "node scripts/migrate-kv.js",
+    "test": "node --test test/*.test.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "axios": "^1.13.6",
     "crypto-js": "^4.2.0",
-    "jsonwebtoken": "^9.0.3",
-    "koa": "^3.1.2",
-    "koa-bodyparser": "^4.4.1",
-    "koa-router": "^14.0.0",
-    "koa-session2": "^2.2.10",
-    "koa-static": "^5.0.0",
-    "uuid": "^13.0.0",
-    "vue": "^3.5.29"
-  }
+    "hono": "^4.13.16",
+    "jose": "^6.2.15"
+  },
+  "devDependencies": {
+    "wrangler": "^4.156.2"
+  },
+  "type": "module"
 }

@@ -22,3 +22,10 @@ node_modules
 .zed
 
 db.json
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+*.backup.json

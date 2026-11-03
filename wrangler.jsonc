@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "xray-subscription",
+  "main": "server/index.js",
+  "compatibility_date": "2026-11-03",
+  "assets": {
+    "directory": "./public",
+    "run_worker_first": ["/api/*", "/subscription/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SUBSCRIPTION_KV",
+      "id": "e6289f8940c44de5bee7b9733d97eae5"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "SUBSCRIPTION_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 1, "period": 10 }
+    }
+  ]
+}
