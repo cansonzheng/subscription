@@ -344,8 +344,7 @@ body {
 }
 
 .login-verification > div {
-  display: flex;
-  justify-content: center;
+  width: 100%;
 }
 
 .verification-error {
@@ -491,8 +490,14 @@ mdui-dialog::part(headline) {
     grid-template-columns: 1fr;
   }
 
+  .login-page {
+    padding: 24px 8px;
+  }
+
   .login-card {
-    padding: 30px 24px;
+    width: min(420px, calc(100vw - 16px));
+    /* Preserve at least 300px for Turnstile's flexible widget on narrow screens. */
+    padding: 30px clamp(0px, calc(50vw - 160px), 24px);
   }
 
   .host-row-new {

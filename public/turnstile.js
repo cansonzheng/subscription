@@ -77,8 +77,8 @@ window.TurnstileChallenge = {
         this.widgetId = turnstile.render(this.$refs.widget, {
           sitekey: data.siteKey,
           action: "login",
-          size: this.$refs.widget.clientWidth < 300 ? "compact" : "flexible",
-          theme: "auto",
+          size: "flexible",
+          theme: "light",
           "response-field": false,
           callback: (token) => {
             this.error = "";
