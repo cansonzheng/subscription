@@ -894,7 +894,8 @@
               :value="loginForm.password"
               @input="loginForm.password = $event.target.value"
             ></mdui-text-field>
-            <mdui-button class="login-submit" type="submit" variant="filled" icon="login" :loading="loginSubmitting" :disabled="loginSubmitting">登录</mdui-button>
+            <turnstile-challenge ref="loginChallenge" @verified="turnstileToken = $event"></turnstile-challenge>
+            <mdui-button class="login-submit" type="submit" variant="filled" icon="login" :loading="loginSubmitting" :disabled="loginSubmitting || !turnstileToken">登录</mdui-button>
           </form>
         </mdui-card>
       </main>
@@ -1077,6 +1078,7 @@
     </div>
 
     <script src="https://fastly.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js"></script>
+    <script src="/turnstile.js"></script>
     <script>
       const { createApp } = Vue;
 
@@ -1116,6 +1118,7 @@
             loading: true,
             isLoggedIn: false,
             loginSubmitting: false,
+            turnstileToken: "",
             groupSubmitting: false,
             nodeSubmitting: false,
             hostsSubmitting: false,
@@ -1187,16 +1190,23 @@
           },
           async handleLogin() {
             if (this.loginSubmitting || !this.loginForm.password) return;
+            if (!this.turnstileToken) {
+              this.showToast("请先完成安全验证", "error");
+              return;
+            }
             this.loginSubmitting = true;
             try {
               const { data } = await axios.post("/api/login", {
                 password: md5(this.loginForm.password),
+                turnstileToken: this.turnstileToken,
               });
               setToken(data.token);
               // Replace any form-submission history entry with a fresh GET navigation.
               window.location.replace(window.location.pathname + window.location.search);
             } catch (error) {
-              this.showToast("密码错误", "error");
+              this.showToast(error.response?.data?.error || "登录失败，请稍后重试", "error");
+              this.turnstileToken = "";
+              this.$refs.loginChallenge.reset();
               this.loginSubmitting = false;
             }
           },
@@ -1486,6 +1496,7 @@
 
       app.config.compilerOptions.isCustomElement = (tag) =>
         tag.startsWith("mdui-");
+      app.component("turnstile-challenge", window.TurnstileChallenge);
       app.mount("#app");
     </script>
   </body>

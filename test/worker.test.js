@@ -1,10 +1,15 @@
-import test from "node:test";
+import test, { beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import CryptoJS from "crypto-js";
 import { SignJWT } from "jose";
 import app from "../server/index.js";
 
 const md5 = (value) => CryptoJS.MD5(value).toString();
+
+beforeEach(() => {
+  mock.method(globalThis, "fetch", async () => Response.json({ success: true, action: "login", hostname: "localhost" }));
+});
+afterEach(() => mock.restoreAll());
 
 function fixture() {
   let stored = JSON.stringify({
@@ -15,6 +20,8 @@ function fixture() {
   });
   const env = {
     JWT_SECRET: "test-only-secret-with-at-least-32-characters",
+    TURNSTILE_SITE_KEY: "test-site-key",
+    Turnstile_Key: { async get() { return "test-secret-key"; } },
     SUBSCRIPTION_KV: {
       async get(key, type) {
         assert.equal(key, "db");
@@ -29,6 +36,7 @@ function fixture() {
     SUBSCRIPTION_RATE_LIMITER: { async limit() { return { success: true }; } },
   };
   async function request(path, method = "GET", body, token) {
+    if (path === "/api/login" && body) body = { turnstileToken: "valid-test-token", ...body };
     return app.request(path, {
       method,
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -55,6 +63,77 @@ test("login, authenticated reads and password changes survive new requests", asy
   assert.equal((await f.request("/api/password", "PUT", { oldPassword: md5("test-password"), newPassword: md5("changed") }, token)).status, 200);
   assert.equal(f.data().adminPassword, md5(md5("changed")));
   await f.login("changed");
+});
+
+test("Turnstile config exposes only the public Site Key", async () => {
+  const f = fixture();
+  const response = await f.request("/api/turnstile/config");
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await response.json(), { siteKey: "test-site-key" });
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("missing, empty, non-string and oversized Turnstile tokens cannot reach password storage", async () => {
+  const f = fixture();
+  f.env.SUBSCRIPTION_KV.get = async () => assert.fail("Rejected challenge must not read KV");
+  for (const turnstileToken of [undefined, "", "   ", 42, "x".repeat(2049)]) {
+    const response = await f.request("/api/login", "POST", { password: md5("test-password"), turnstileToken });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).token, undefined);
+  }
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("login verifies the token with Secrets Store before issuing JWT", async () => {
+  const f = fixture();
+  let secretReads = 0;
+  f.env.Turnstile_Key.get = async () => { secretReads++; return "private-secret"; };
+  globalThis.fetch.mock.mockImplementation(async (url, options) => {
+    assert.equal(url, "https://challenges.cloudflare.com/turnstile/v0/siteverify");
+    assert.equal(options.method, "POST");
+    assert.deepEqual(JSON.parse(options.body), { secret: "private-secret", response: "valid-test-token" });
+    assert.ok(options.signal instanceof AbortSignal);
+    return Response.json({ success: true, action: "login", hostname: "localhost" });
+  });
+  assert.ok(await f.login());
+  assert.equal(secretReads, 1);
+});
+
+test("invalid, expired, reused and cross-host or cross-action challenges fail closed", async () => {
+  const f = fixture();
+  f.env.SUBSCRIPTION_KV.get = async () => assert.fail("Rejected challenge must not read KV");
+  for (const result of [
+    { success: false, "error-codes": ["invalid-input-response"] },
+    { success: false, "error-codes": ["timeout-or-duplicate"] },
+    { success: true, action: "other", hostname: "localhost" },
+    { success: true, action: "login", hostname: "other.example" },
+    { success: true },
+  ]) {
+    globalThis.fetch.mock.mockImplementation(async () => Response.json(result));
+    const response = await f.request("/api/login", "POST", { password: md5("test-password") });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).token, undefined);
+  }
+});
+
+test("Secrets Store failures and Siteverify outages never allow login", async () => {
+  const f = fixture();
+  f.env.SUBSCRIPTION_KV.get = async () => assert.fail("Unavailable verification must not read KV");
+  for (const implementation of [
+    async () => { throw new Error("network timeout"); },
+    async () => new Response("unavailable", { status: 503 }),
+    async () => new Response("invalid json"),
+    async () => Response.json({ success: false, "error-codes": ["invalid-input-secret"] }),
+  ]) {
+    globalThis.fetch.mock.mockImplementation(implementation);
+    assert.equal((await f.request("/api/login", "POST", { password: md5("test-password") })).status, 503);
+  }
+  f.env.Turnstile_Key.get = async () => { throw new Error("secret unavailable"); };
+  assert.equal((await f.request("/api/login", "POST", { password: md5("test-password") })).status, 503);
+  delete f.env.Turnstile_Key;
+  assert.equal((await f.request("/api/login", "POST", { password: md5("test-password") })).status, 503);
+  delete f.env.TURNSTILE_SITE_KEY;
+  assert.equal((await f.request("/api/turnstile/config")).status, 503);
 });
 
 test("node, group and Host mutations persist and deletion removes node references", async () => {

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { SignJWT, jwtVerify } from "jose";
 import CryptoJS from "crypto-js";
 import { loadData, saveData } from "./data.js";
+import { verifyTurnstile } from "./turnstile.js";
 
 const app = new Hono();
 
@@ -112,12 +113,31 @@ function getGroupProxies(group, data) {
 }
 
 // API 路由
+app.get("/api/turnstile/config", (ctx) => {
+  if (!ctx.env.TURNSTILE_SITE_KEY) {
+    return ctx.json({ error: "安全验证暂时不可用，请稍后重试" }, 503);
+  }
+  return ctx.json({ siteKey: ctx.env.TURNSTILE_SITE_KEY });
+});
+
 // 登录
 app.post("/api/login", async (ctx) => {
-  const { password } = await readBody(ctx);
+  const { password, turnstileToken } = await readBody(ctx);
 
   if (typeof password !== "string" || !password) {
     return ctx.json({ error: "缺少密码" }, 400);
+  }
+
+  if (typeof turnstileToken !== "string" || !turnstileToken.trim() || turnstileToken.length > 2048) {
+    return ctx.json({ error: "请先完成安全验证" }, 403);
+  }
+  try {
+    const verified = await verifyTurnstile(
+      ctx.env, turnstileToken, new URL(ctx.req.url).hostname, ctx.req.header("CF-Connecting-IP")
+    );
+    if (!verified) return ctx.json({ error: "安全验证未通过或已过期，请重新验证" }, 403);
+  } catch {
+    return ctx.json({ error: "安全验证暂时不可用，请稍后重试" }, 503);
   }
 
   const data = await loadData(ctx.env);

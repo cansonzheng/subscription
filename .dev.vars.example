@@ -1,2 +1,4 @@
 JWT_SECRET=replace-with-a-long-random-secret
+TURNSTILE_SITE_KEY=replace-with-your-development-site-key
+# Create Turnstile_Key in the local Secrets Store; see README.md.
 # SUBSCRIPTION_UA_SECRET=your-subscription-user-agent-secret

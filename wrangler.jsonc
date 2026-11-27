@@ -3,6 +3,16 @@
   "name": "xray-subscription",
   "main": "server/index.js",
   "compatibility_date": "2026-11-03",
+  "vars": {
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFu20qOTZr7FinMc"
+  },
+  "secrets_store_secrets": [
+    {
+      "binding": "Turnstile_Key",
+      "store_id": "c1550061906a44a1aef4daf33bc3e46b",
+      "secret_name": "Turnstile_Key"
+    }
+  ],
   "assets": {
     "directory": "./public",
     "run_worker_first": ["/api/*", "/subscription/*"]
